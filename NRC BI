@@ -1,0 +1,680 @@
+set hive.mapred.mode=nonstrict;
+
+set hive.merge.mapfiles = true;
+set hive.merge.mapredfiles = true;
+set hive.merge.size.per.task = 256000000;
+set hive.merge.smallfiles.avgsize = 100000000;
+ 
+SET hive.exec.compress.output=true;
+SET avro.output.codec=snappy;
+SET parquet.output.codec=snappy;
+SET hive.exec.compress.intermediate=true;
+ 
+--For very large data:
+SET mapreduce.input.fileinputformat.split.minsize=2598455210;
+SET mapreduce.input.fileinputformat.split.maxsize=2598455210;
+set CUR_WEEK_END_DATE ='2017-12-09';
+
+--Set 1  :-
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+---- GEO CUTS ----
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------
+-- NEWLY LAPSED USERS: Create table with newly lapsed users and prior active streak
+-------------------------------------------------------
+-- done - 
+
+drop table if exists ck_product.NRC_APP_WEEKLY_NEW_LAPSED;
+create table ck_product.NRC_APP_WEEKLY_NEW_LAPSED
+stored as parquet AS 
+select
+a.WEEK_LAG - 1.0 as WEEK_LAG
+,a.ACTIVE_STREAK as PRIOR_ACTIVE_STREAK
+,count (distinct a.UPM_USER_ID) as NEW_LAPSED_USER_COUNT
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a
+left join (select UPM_USER_ID, WEEK_LAG from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V) t on a.UPM_USER_ID = t.UPM_USER_ID and (a.WEEK_LAG - 1.0) = t.WEEK_LAG
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_V u on a.UPM_USER_ID = u.UPM_USER_ID
+where t.UPM_USER_ID is null
+and a.WEEK_LAG > 0
+and u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by a.WEEK_LAG, a.ACTIVE_STREAK;
+-------------------------------------------------------
+-- WEEKLY SUMMARY: Create table that summarizes Weekly Active / New Users / Retained / Reactivated / Newly Lapsed
+-------------------------------------------------------
+-- not done - 
+drop table if exists ck_product.NRC_APP_WEEKLY_SUMMARY;
+create table ck_product.NRC_APP_WEEKLY_SUMMARY
+stored as parquet AS 
+select a.WEEK_LAG
+,count (distinct a.UPM_USER_ID) as TOTAL_WEEKLY_ACTIVE
+,count (distinct case when CLASSIFICATION = 'NEW' then a.UPM_USER_ID else null end) as NEW_USER_COUNT
+,count (distinct case when CLASSIFICATION = 'RETAINED' then a.UPM_USER_ID else null end) as RETAINED_USER_COUNT
+,count (distinct case when CLASSIFICATION = 'REACTIVATED' then a.UPM_USER_ID else null end) as REACTIVATED_USER_COUNT
+,t.NEWLY_LAPSED_USER_COUNT
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a
+left join (select WEEK_LAG, sum(NEW_LAPSED_USER_COUNT) as NEWLY_LAPSED_USER_COUNT from ck_product.NRC_APP_WEEKLY_NEW_LAPSED group by WEEK_LAG) t on a.WEEK_LAG = t.WEEK_LAG
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_V u on a.UPM_USER_ID = u.UPM_USER_ID
+where u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by a.WEEK_LAG, t.NEWLY_LAPSED_USER_COUNT;
+
+
+--Set 2 :-
+-------------------------------------------------------
+-- NEWLY LAPSED USERS: Create table with newly lapsed users and prior active streak
+-------------------------------------------------------
+-- done -  
+drop table if exists ck_product.NRC_APP_WEEKLY_NEW_LAPSED_GEO;
+create table ck_product.NRC_APP_WEEKLY_NEW_LAPSED_GEO
+stored as parquet AS 
+select
+case when GEO_desc is not NULL then GEO_desc else 'NA' end as GEO_desc
+,a.WEEK_LAG - 1.0 as WEEK_LAG
+,a.ACTIVE_STREAK as PRIOR_ACTIVE_STREAK
+,count (distinct a.UPM_USER_ID) as NEW_LAPSED_USER_COUNT
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a
+left join (select UPM_USER_ID, WEEK_LAG from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V) t on a.UPM_USER_ID = t.UPM_USER_ID and (a.WEEK_LAG - 1.0) = t.WEEK_LAG
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on u.UPM_USER_ID = a.UPM_USER_ID
+where t.UPM_USER_ID is null
+and a.WEEK_LAG > 0
+and VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+group by a.WEEK_LAG, a.ACTIVE_STREAK,case when GEO_desc is not NULL then GEO_desc else 'NA' end with rollup;
+-------------------------------------------------------
+-- WEEKLY SUMMARY: Create table that summarizes Weekly Active / New Users / Retained / Reactivated / Newly Lapsed
+-------------------------------------------------------
+-- not done - 
+drop table if exists ck_product.NRC_APP_WEEKLY_SUMMARY_geo;
+create table ck_product.NRC_APP_WEEKLY_SUMMARY_geo
+stored as parquet AS 
+select a.WEEK_LAG
+,u.geo_desc
+,count (distinct a.UPM_USER_ID) as TOTAL_WEEKLY_ACTIVE
+,count (distinct case when CLASSIFICATION = 'NEW' then a.UPM_USER_ID else null end) as NEW_USER_COUNT
+,count (distinct case when CLASSIFICATION = 'RETAINED' then a.UPM_USER_ID else null end) as RETAINED_USER_COUNT
+,count (distinct case when CLASSIFICATION = 'REACTIVATED' then a.UPM_USER_ID else null end) as REACTIVATED_USER_COUNT
+,t.NEWLY_LAPSED_USER_COUNT
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a
+inner join 
+(
+select 
+geo_desc,
+UPM_USER_ID,
+VALID_CONSUMER_PROFILE_ID
+,VALID_EMAIL_FLAG
+,TEST_USER_FLAG 
+from
+DATASCIENCE_CK.KPMG_NRC_USR_AGG_V 
+)u on a.UPM_USER_ID = u.UPM_USER_ID
+left join (select geo_desc,WEEK_LAG, sum(NEW_LAPSED_USER_COUNT) as NEWLY_LAPSED_USER_COUNT from ck_product.NRC_APP_WEEKLY_NEW_LAPSED_GEO group by geo_desc,WEEK_LAG) t on a.WEEK_LAG = t.WEEK_LAG and upper(u.geo_desc) = upper(t.geo_desc)
+where u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by u.geo_desc,a.WEEK_LAG, t.NEWLY_LAPSED_USER_COUNT;
+
+--Set 3
+-------------------------------------------------------
+-------ENGAGEMENT-------
+-------------------------------------------------------
+--Weekly Active Users / % Active with 1 Visit / Average Visits per Week
+-------------------------------------------------------
+-- done -  
+DROP TABLE IF EXISTS ck_product.NRC_APP_ENGAGEMENT_SUMMARY_geo;
+CREATE TABLE ck_product.NRC_APP_ENGAGEMENT_SUMMARY_geo
+stored as parquet AS 
+select
+case when geo_desc is not NULL then geo_desc else 'NA' end as geo_desc
+,WEEK_LAG
+,count (distinct a.UPM_USER_ID) as WEEKLY_USERS
+,round(sum (TOTAL_VISITS) / count (distinct a.UPM_USER_ID),2) as AVG_VISIT_USER 
+,count (distinct case when TOTAL_VISITS = 1 then a.UPM_USER_ID else null end) / count (distinct a.UPM_USER_ID) as PERCENT_USERS_1_VISIT
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY_V a
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on a.UPM_USER_ID = u.UPM_USER_ID
+where VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+group by WEEK_LAG,case when geo_desc is not NULL then geo_desc else 'NA' end with rollup;
+-------------------------------------------------------
+--Running Stats
+-------------------------------------------------------
+-- done - 
+DROP TABLE IF EXISTS ck_product.NRC_APP_RUNNING_STATS_geo;
+CREATE TABLE ck_product.NRC_APP_RUNNING_STATS_geo
+stored as parquet AS 
+select 
+case when geo_desc is not NULL then geo_desc else 'NA' end as geo_desc
+,a.WEEK_LAG
+,count(distinct a.UPM_USER_ID) as WEEKLY_RUNNERS
+,count (distinct case when c.CLASSIFICATION = 'NEW' then c.UPM_USER_ID else null end) as WEEKLY_RUNNERS_NEW_USERS
+,count (distinct case when c.CLASSIFICATION = 'RETAINED' then c.UPM_USER_ID else null end) as WEEKLY_RUNNERS_RETAINED_USERS
+,count (distinct case when c.CLASSIFICATION = 'REACTIVATED' then c.UPM_USER_ID else null end) as WEEKLY_RUNNERS_REACTIVATED_USERS
+,sum(a.WEEKLY_RUNS) as WEEKLY_RUNS
+,count (distinct case when a.WEEKLY_RUNS = 1 then a.UPM_USER_ID else null end) / count(distinct a.UPM_USER_ID) as PERCENT_RUNNERS_1_RUN
+,sum(a.WEEKLY_RUNS) / count(distinct a.UPM_USER_ID) as AVG_RUNS_PER_RUNNER
+,sum(cast(weekly_dist_miles as DECIMAL(9,6))) / count(distinct a.UPM_USER_ID) as AVG_DIST_MILES
+,sum(a.WEEKLY_DURTN_MIN) / count(distinct a.UPM_USER_ID) as AVG_DURTN_MIN
+from DATASCIENCE_CK.KPMG_NRC_RUNNING_WEEKLY_V a
+left join (select WEEK_LAG, UPM_USER_ID, CLASSIFICATION from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V) c on a.UPM_USER_ID = c.UPM_USER_ID and a.WEEK_LAG = c.WEEK_LAG
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on a.UPM_USER_ID = u.UPM_USER_ID
+where a.WEEK_LAG BETWEEN 0 and 70
+and VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+group by a.WEEK_LAG,case when geo_desc is not NULL then geo_desc else 'NA' end with rollup;
+
+
+--Set 4
+-------------------------------------------------------
+--DAU / MAU (7-day trend)
+-------------------------------------------------------
+-- done - 
+DROP TABLE IF EXISTS ck_product.NRC_APP_DAU_MAU_geo;
+CREATE TABLE ck_product.NRC_APP_DAU_MAU_geo
+stored as parquet AS 
+select geo_desc, METRIC, DAY_LAG_0, DAY_LAG_1, DAY_LAG_2, DAY_LAG_3, DAY_LAG_4, DAY_LAG_5, DAY_LAG_6
+from (
+select
+case when geo_desc is not NULL then geo_desc else 'NA' end as geo_desc
+,'DAU' as METRIC
+,count (distinct case when DAY_LAG = 0 then a1.UPM_USER_ID else null end) as DAY_LAG_0
+,count (distinct case when DAY_LAG = 1 then a1.UPM_USER_ID else null end) as DAY_LAG_1
+,count (distinct case when DAY_LAG = 2 then a1.UPM_USER_ID else null end) as DAY_LAG_2
+,count (distinct case when DAY_LAG = 3 then a1.UPM_USER_ID else null end) as DAY_LAG_3
+,count (distinct case when DAY_LAG = 4 then a1.UPM_USER_ID else null end) as DAY_LAG_4
+,count (distinct case when DAY_LAG = 5 then a1.UPM_USER_ID else null end) as DAY_LAG_5
+,count (distinct case when DAY_LAG = 6 then a1.UPM_USER_ID else null end) as DAY_LAG_6
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v a1
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on a1.UPM_USER_ID = u.UPM_USER_ID
+where u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by case when geo_desc is not NULL then geo_desc else 'NA' end with rollup
+union all
+select
+case when geo_desc is not NULL then geo_desc else 'NA' end as geo_desc
+,'MAU' as METRIC
+,count (distinct case when DAY_LAG between 0 and 29 then a1.UPM_USER_ID else null end) as DAY_LAG_0
+,count (distinct case when DAY_LAG between 1 and 30 then a1.UPM_USER_ID else null end) as DAY_LAG_1
+,count (distinct case when DAY_LAG between 2 and 31 then a1.UPM_USER_ID else null end) as DAY_LAG_2
+,count (distinct case when DAY_LAG between 3 and 32 then a1.UPM_USER_ID else null end) as DAY_LAG_3
+,count (distinct case when DAY_LAG between 4 and 33 then a1.UPM_USER_ID else null end) as DAY_LAG_4
+,count (distinct case when DAY_LAG between 5 and 34 then a1.UPM_USER_ID else null end) as DAY_LAG_5
+,count (distinct case when DAY_LAG between 6 and 35 then a1.UPM_USER_ID else null end) as DAY_LAG_6
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v a1
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on a1.UPM_USER_ID = u.UPM_USER_ID
+where u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by case when geo_desc is not NULL then geo_desc else 'NA' end with rollup
+union all
+select
+case when geo_desc is not NULL then geo_desc else 'NA' end as geo_desc
+,'DAU/MAU' as METRIC
+,count (distinct case when DAY_LAG = 0 then a1.UPM_USER_ID else null end) / count (distinct case when DAY_LAG between 0 and 29 then a1.UPM_USER_ID else null end) as DAY_LAG_0
+,count (distinct case when DAY_LAG = 1 then a1.UPM_USER_ID else null end) / count (distinct case when DAY_LAG between 1 and 30 then a1.UPM_USER_ID else null end) as DAY_LAG_1
+,count (distinct case when DAY_LAG = 2 then a1.UPM_USER_ID else null end) / count (distinct case when DAY_LAG between 2 and 31 then a1.UPM_USER_ID else null end) as DAY_LAG_2
+,count (distinct case when DAY_LAG = 3 then a1.UPM_USER_ID else null end) / count (distinct case when DAY_LAG between 3 and 32 then a1.UPM_USER_ID else null end) as DAY_LAG_3
+,count (distinct case when DAY_LAG = 4 then a1.UPM_USER_ID else null end) / count (distinct case when DAY_LAG between 4 and 33 then a1.UPM_USER_ID else null end) as DAY_LAG_4
+,count (distinct case when DAY_LAG = 5 then a1.UPM_USER_ID else null end) / count (distinct case when DAY_LAG between 5 and 34 then a1.UPM_USER_ID else null end) as DAY_LAG_5
+,count (distinct case when DAY_LAG = 6 then a1.UPM_USER_ID else null end) / count (distinct case when DAY_LAG between 6 and 35 then a1.UPM_USER_ID else null end) as DAY_LAG_6
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v a1
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on a1.UPM_USER_ID = u.UPM_USER_ID
+where u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by case when geo_desc is not NULL then geo_desc else 'NA' end with rollup) t;
+-------------------------------------------------------
+DROP TABLE IF EXISTS ck_product.NRC_APP_FEATURE1_geo;
+CREATE TABLE ck_product.NRC_APP_FEATURE1_geo
+stored as parquet AS 
+select 
+case when geo_desc is not NULL then geo_desc else 'NA' end as geo_desc
+,a1.WEEK_LAG
+,count(distinct case when a1.MUSIC_FLAG = 1 then a1.UPM_USER_ID else null end) as MUSIC_USERS
+,count(distinct case when a1.TOTAL_LEADERBOARD_VISITS > 0 then a1.UPM_USER_ID else null end) as TOTAL_LEADERBOARD_VISITORS
+,count(distinct case when a1.TOTAL_FEED_VISITS > 0 then a1.UPM_USER_ID else null end) as TOTAL_FEED_VISITORS
+,count(distinct case when a1.TOTAL_CHEERS_OR_LIKES > 0 then a1.UPM_USER_ID else null end) as TOTAL_USERS_FEED_LIKE
+,count(distinct case when a1.TOTAL_FEED_COMMENTS > 0 then a1.UPM_USER_ID else null end) as TOTAL_USERS_FEED_COMMENT
+,count(distinct case when a1.TOTAL_FEED_POSTS > 0 then a1.UPM_USER_ID else null end) as TOTAL_USERS_FEED_POST
+,count(distinct case when a1.TOTAL_THREAD_VISITS > 0 then a1.UPM_USER_ID else null end) as TOTAL_THREAD_VISITORS
+,count(distinct case when a1.TOTAL_CARD_TAPS > 0 then a1.UPM_USER_ID else null end) as TOTAL_USERS_CARD_TAP
+,count(distinct case when a1.TOTAL_SHARE_ATTEMPTS > 0 then a1.UPM_USER_ID else null end) as TOTAL_USERS_SHARE
+,count(distinct case when a1.TOTAL_ADD_FRIENDS > 0 then a1.UPM_USER_ID else null end) as TOTAL_USERS_ADDED_FRIEND
+,count(distinct case when a1.TOTAL_INBOX_VISITS > 0 then a1.UPM_USER_ID else null end) as TOTAL_INBOX_VISITORS
+,count(distinct case when a1.TOTAL_CLUB_VISITS > 0 then a1.UPM_USER_ID else null end) as TOTAL_CLUB_VISITORS
+,count(distinct case when a1.TOTAL_CLICKS_EVENT > 0 then a1.UPM_USER_ID else null end) as TOTAL_USERS_CLICKS_EVENT
+,sum(RUN_STARTS_OMNI) as RUN_STARTS_OMNI
+,sum(SPEED_RUN_STARTS_OMNI)/sum(RUN_STARTS_OMNI) as PRCNT_SPEED_RUN_STARTS
+,sum(DISTANCE_RUN_STARTS_OMNI)/sum(RUN_STARTS_OMNI) as PRCNT_DISTANCE_RUN_STARTS
+,sum(DURATION_RUN_STARTS_OMNI)/sum(RUN_STARTS_OMNI) as PRCNT_DURATION_RUN_STARTS
+,sum(BASIC_RUN_STARTS_OMNI)/sum(RUN_STARTS_OMNI) as PRCNT_BASIC_RUN_STARTS
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY_V a1
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on a1.UPM_USER_ID = u.UPM_USER_ID
+where a1.WEEK_LAG BETWEEN 0 and 53
+and VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+group by a1.WEEK_LAG,case when geo_desc is not NULL then geo_desc else 'NA' end with rollup;
+
+
+--Music / Leaderboard
+-------------------------------------------------------
+-- done - 
+
+
+--Set 5 :-
+DROP TABLE IF EXISTS ck_product.NRC_APP_FEATURE2_geo;
+CREATE TABLE ck_product.NRC_APP_FEATURE2_geo 
+stored as parquet AS 
+select
+case when t.geo_desc is not NULL then t.geo_desc else 'NA' end as geo_desc 
+,t.WEEK_LAG
+,count (distinct t.UPM_USER_ID) as WEEKLY_USERS_WHO_SHARE
+from
+(select distinct
+u.geo_desc
+,suf.UPM_USER_ID
+,substr(dd.FSCL_WK_END_DT,1,10) as WEEK_END_DATE
+,datediff (${hiveconf:CUR_WEEK_END_DATE},substr(dd.FSCL_WK_END_DT,1,10))/7 as WEEK_LAG
+from SOCIALDM.SOCIAL_USER_SHR_FACT suf 
+inner join SOCIALDM.SOCIAL_APPL_PLTFRM_XREF_V sapx on suf.SOCIAL_APPL_PLTFRM_XREF_SK = sapx.SOCIAL_APPL_PLTFRM_XREF_SK
+inner join SPORTACTDM.DT_DIM dd on to_date(suf.SHR_DTT) = to_date(dd.DT)
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on suf.UPM_USER_ID = u.UPM_USER_ID
+where substr(dd.FSCL_WK_END_DT,1,10) between date_sub(${hiveconf:CUR_WEEK_END_DATE},377) and ${hiveconf:CUR_WEEK_END_DATE}
+and sapx.SOCIAL_NIKE_PLUS_CAT_NM = 'Running'
+and sapx.SOCIAL_APPL_NM IN ('NIKEPLUSGPS', 'RUNNING_ANDROID', 'nikeapp','nikeplusgps')
+and u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+and suf.SHR_DTT_PART >= '2013-01') t
+where t.WEEK_LAG BETWEEN 0 and 53
+group by t.WEEK_LAG,case when t.geo_desc is not NULL then t.geo_desc else 'NA' end with rollup;
+-------------------------------------------------------
+--1-WEEK RETENTION
+-------------------------------------------------------
+-- done -  
+DROP TABLE IF EXISTS ck_product.NRC_APP_1WK_RETENTION_geo;
+CREATE TABLE ck_product.NRC_APP_1WK_RETENTION_geo
+stored as parquet AS 
+SELECT
+case when u.geo_desc is not null then u.geo_desc else 'NA' end as geo_desc
+,a1.WEEK_LAG
+,a2.CLASSIFICATION as PREV_CLASSIFICATION
+,count(distinct a1.UPM_USER_ID) as TOTAL_RETAINED
+FROM DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a1
+LEFT JOIN DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a2 on a1.WEEK_LAG = (a2.WEEK_LAG - 1) and a1.UPM_USER_ID = a2.UPM_USER_ID
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on u.UPM_USER_ID = a1.UPM_USER_ID
+WHERE a1.CLASSIFICATION = 'RETAINED'
+AND a1.WEEK_LAG BETWEEN 0 and 53
+and VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+GROUP BY a1.WEEK_LAG, a2.CLASSIFICATION, case when u.geo_desc is not null then u.geo_desc else 'NA' end with rollup;
+
+
+--Set 6
+-----------------------------------------------------
+--1 day / 1 week / 30 day / 1 year Retention
+-----------------------------------------------------
+-- done -  
+
+DROP TABLE IF EXISTS ck_product.NRC_APP_4wk52wk_RETENTION_geo;
+CREATE TABLE ck_product.NRC_APP_4wk52wk_RETENTION_geo
+stored as parquet AS 
+SELECT geo_desc, TIMEFRAME, RETENTION_RATE FROM
+(SELECT     
+case when geo_desc is not null then geo_desc else 'NA' end as geo_desc
+,'4 WEEK' as TIMEFRAME
+,count (distinct t1.UPM_USER_ID) / count (distinct a.UPM_USER_ID) as RETENTION_RATE
+FROM DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY_V a
+LEFT JOIN (SELECT DISTINCT UPM_USER_ID FROM DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY_V WHERE WEEK_LAG BETWEEN 0 and 3) t1
+ON a.UPM_USER_ID = t1.UPM_USER_ID
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on a.UPM_USER_ID = u.UPM_USER_ID
+WHERE a.WEEK_LAG BETWEEN 4 and 7
+and VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+group by case when geo_desc is not null then geo_desc else 'NA' end with rollup
+UNION ALL
+SELECT
+case when geo_desc is not null then geo_desc else 'NA' end as geo_desc
+,'52 WEEK' as TIMEFRAME
+,count (distinct t2.UPM_USER_ID) / count (distinct b.UPM_USER_ID) as RETENTION_RATE
+FROM DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY_V b
+LEFT JOIN (SELECT DISTINCT UPM_USER_ID FROM DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY_V WHERE WEEK_LAG BETWEEN 0 and 51) t2
+ON b.UPM_USER_ID = t2.UPM_USER_ID
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on b.UPM_USER_ID = u.UPM_USER_ID
+WHERE b.WEEK_LAG BETWEEN 52 and 103
+and VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+group by case when geo_desc is not null then geo_desc else 'NA' end with rollup
+) o;
+-----------------------------------------------------
+-- RUNNER RETENTION
+-----------------------------------------------------
+-- done - 
+DROP TABLE IF EXISTS ck_product.NRC_APP_WEEKLY_WORKOUT_RETENTION_geo;
+CREATE TABLE ck_product.NRC_APP_WEEKLY_WORKOUT_RETENTION_geo
+stored as parquet AS 
+SELECT
+case when u.geo_desc is not null then u.geo_desc else 'NA' end as geo_desc
+,a1.WEEK_LAG - 1 AS WEEK_LAG
+,a1.WEEK_LAG AS DENOMINATOR_WEEK_LAG
+,COUNT(DISTINCT(a1.UPM_USER_ID)) AS TOTAL_KEY_ACTIVE_LAST
+,COUNT(DISTINCT(a2.UPM_USER_ID)) AS TOTAL_KEY_ACTIVE_RETAINED
+,COUNT(DISTINCT(a2.UPM_USER_ID))/COUNT(DISTINCT(a1.UPM_USER_ID)) AS TOTAL_KEY_ACTIVE_RTNED_PRCNT
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='NEW' THEN a1.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_NEW_LAST
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='NEW' THEN a2.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_NEW_RTNED
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='NEW' THEN a2.UPM_USER_ID ELSE NULL END))/COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='NEW' THEN a1.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_NEW_PERCENT
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='RETAINED' THEN a1.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_RETAINED_LAST
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='RETAINED' THEN a2.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_RETAINED_RTNED
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='RETAINED' THEN a2.UPM_USER_ID ELSE NULL END))/COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='RETAINED' THEN a1.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_RETAINED_PERCENT
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='REACTIVATED' THEN a1.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_REACTIVATED_LAST
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='REACTIVATED' THEN a2.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_REACTIVATED_RTNED
+,COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='REACTIVATED' THEN a2.UPM_USER_ID ELSE NULL END))/COUNT(DISTINCT(CASE WHEN a1.CLASSIFICATION='REACTIVATED' THEN a1.UPM_USER_ID ELSE NULL END)) AS TOTAL_KEY_ACTIVE_REACTIVATED_PERCENT
+FROM DATASCIENCE_CK.KPMG_NRC_RUNNING_WEEKLY2_V a1
+LEFT JOIN DATASCIENCE_CK.KPMG_NRC_RUNNING_WEEKLY2_V a2
+on a1.WEEK_LAG = (a2.WEEK_LAG + 1)
+and a1.UPM_USER_ID = a2.UPM_USER_ID
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on a1.UPM_USER_ID = u.UPM_USER_ID
+WHERE 1=1
+AND a1.WEEK_LAG BETWEEN 1 and 54
+and VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+GROUP BY a1.WEEK_LAG,case when u.geo_desc is not null then u.geo_desc else 'NA' end with rollup;
+
+
+
+--set 7:-
+-----------------------------------------------------
+--D1/D7/D14/D28: LOGIN
+-----------------------------------------------------
+-- done - 
+
+DROP TABLE IF EXISTS ck_product.NRC_APP_D_RETENTION_LOGIN_geo;
+CREATE TABLE ck_product.NRC_APP_D_RETENTION_LOGIN_geo
+stored as parquet AS 
+select geo_desc
+,FIRST_LOGIN_LAG
+,D1_RETENTION/FIRST_ACTIVE_COUNT as D1_RETENTION
+,D7_RETENTION/FIRST_ACTIVE_COUNT as D7_RETENTION
+,D14_RETENTION/FIRST_ACTIVE_COUNT as D14_RETENTION
+,D30_RETENTION/FIRST_ACTIVE_COUNT as D30_RETENTION
+from
+(select
+case when u.geo_desc is not null then u.geo_desc else 'NA' end as geo_desc
+,FIRST_LOGIN_LAG
+,count (distinct u.UPM_USER_ID) as FIRST_ACTIVE_COUNT
+,count (t1.UPM_USER_ID) as D1_RETENTION
+,count (t7.UPM_USER_ID) as D7_RETENTION
+,count (t14.UPM_USER_ID) as D14_RETENTION
+,count (t28.UPM_USER_ID) as D30_RETENTION
+from DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u
+left join (select DAY_LAG, UPM_USER_ID from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v) t1 on u.UPM_USER_ID = t1.UPM_USER_ID 
+and u.FIRST_LOGIN_LAG = (t1.DAY_LAG + 1)
+left join (select DAY_LAG, UPM_USER_ID from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v) t7 on u.UPM_USER_ID = t7.UPM_USER_ID 
+and u.FIRST_LOGIN_LAG = (t7.DAY_LAG + 7)
+left join (select DAY_LAG, UPM_USER_ID from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v) t14 on u.UPM_USER_ID = t14.UPM_USER_ID 
+and u.FIRST_LOGIN_LAG = (t14.DAY_LAG + 14)
+left join (select DAY_LAG, UPM_USER_ID from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v) t28 on u.UPM_USER_ID = t28.UPM_USER_ID 
+and u.FIRST_LOGIN_LAG = (t28.DAY_LAG + 28)
+where u.FIRST_LOGIN_LAG between 1 and 34
+and u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by FIRST_LOGIN_LAG, case when u.geo_desc is not null then u.geo_desc else 'NA' end with rollup) b;
+-----------------------------------------------------
+--D1/D7/D14/D28: ACTIVITY
+-----------------------------------------------------
+-- done - 
+DROP TABLE IF EXISTS ck_product.NRC_APP_D_RETENTION_ACTIVITY_geo;
+CREATE TABLE ck_product.NRC_APP_D_RETENTION_ACTIVITY_geo
+stored as parquet AS 
+select geo_desc
+,FIRST_RUNNING_LAG
+,D1_RETENTION/FIRST_ACTIVE_COUNT as D1_RETENTION
+,D7_RETENTION/FIRST_ACTIVE_COUNT as D7_RETENTION
+,D14_RETENTION/FIRST_ACTIVE_COUNT as D14_RETENTION
+,D30_RETENTION/FIRST_ACTIVE_COUNT as D30_RETENTION
+from
+(select
+case when u.geo_desc is not null then u.geo_desc else 'NA' end as geo_desc
+,u.FIRST_RUNNING_LAG
+,count (distinct u.UPM_USER_ID) as FIRST_ACTIVE_COUNT
+,count (t1.UPM_USER_ID) as D1_RETENTION
+,count (t7.UPM_USER_ID) as D7_RETENTION
+,count (t14.UPM_USER_ID) as D14_RETENTION
+,count (t28.UPM_USER_ID) as D30_RETENTION
+from DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u
+left join (select DAY_LAG, UPM_USER_ID from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v) t1 on u.UPM_USER_ID = t1.UPM_USER_ID and u.FIRST_RUNNING_LAG = (t1.DAY_LAG + 1)
+left join (select DAY_LAG, UPM_USER_ID from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v) t7 on u.UPM_USER_ID = t7.UPM_USER_ID and u.FIRST_RUNNING_LAG = (t7.DAY_LAG + 7)
+left join (select DAY_LAG, UPM_USER_ID from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v) t14 on u.UPM_USER_ID = t14.UPM_USER_ID and u.FIRST_RUNNING_LAG = (t14.DAY_LAG + 14)
+left join (select DAY_LAG, UPM_USER_ID from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_DAILY_v) t28 on u.UPM_USER_ID = t28.UPM_USER_ID and u.FIRST_RUNNING_LAG = (t28.DAY_LAG + 28)
+where u.FIRST_RUNNING_LAG between 1 and 34
+and u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by u.FIRST_RUNNING_LAG,case when u.geo_desc is not null then u.geo_desc else 'NA' end with rollup) b;
+
+
+--Set 8 :-
+-----------------------------------------------------
+-- RETAINED STREAK
+-----------------------------------------------------
+-- done -  
+
+drop table if exists ck_product.NRC_APP_RETAINED_STREAK_GEO;
+create table ck_product.NRC_APP_RETAINED_STREAK_GEO
+stored as parquet AS 
+select 
+case when u.geo_desc is not null then u.geo_desc else 'NA' end as geo_desc,
+cast(a.WEEK_LAG as int) wl ,a.ACTIVE_STREAK,
+count (distinct a.UPM_USER_ID) as RETAINED_USER_COUNT 
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a 
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_V u on a.UPM_USER_ID = u.UPM_USER_ID
+where u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+and CLASSIFICATION = 'RETAINED' and WEEK_LAG between 0 and 12 
+group by a.WEEK_LAG, a.ACTIVE_STREAK, case when u.geo_desc is not null then u.geo_desc else 'NA' end with rollup;
+-----------------------------------------------------
+-- RE ACTIVATED STREAK
+-----------------------------------------------------
+-- done - 
+drop table ck_product.NRC_APP_REACTIVATED_STREAK_GEO;
+create table ck_product.NRC_APP_REACTIVATED_STREAK_GEO
+stored as parquet AS 
+select case when u.geo_desc is not null then u.geo_desc else 'NA' end as geo_desc,
+cast(a.WEEK_LAG as int) wl ,case when a.LAPSE_STREAK <= 4 then a.LAPSE_STREAK when a.LAPSE_STREAK >=5 
+then '5+' end as LAPSE_STREAK ,
+count (distinct a.UPM_USER_ID) as USER_COUNT 
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a 
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_V u on a.UPM_USER_ID = u.UPM_USER_ID
+where u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+and CLASSIFICATION = 'REACTIVATED' and WEEK_LAG between 0 and 12
+group by a.WEEK_LAG, 
+case when a.LAPSE_STREAK <= 4 then a.LAPSE_STREAK when a.LAPSE_STREAK >=5 then '5+' end,
+case when u.geo_desc is not null then u.geo_desc else 'NA' end with rollup;
+
+
+--Set 9-
+-----------------------------------------------------
+-- LTD Active
+-----------------------------------------------------
+-- done -  
+drop table if exists ck_product.NRC_LTD_ACTIVE_GEO;
+create table ck_product.NRC_LTD_ACTIVE_GEO
+stored as parquet AS 
+select 
+case when geo_desc is not null then geo_desc else 'NA' end as geo_desc,
+count (distinct a1.UPM_USER_ID) as LTD_USERS_LAG_0
+,count (distinct case when WEEK_LAG > 0 then a1.UPM_USER_ID else null end) as LTD_USERS_LAG_1
+,count (distinct case when WEEK_LAG > 52 then a1.UPM_USER_ID else null end) as LTD_USERS_LAG_53
+from DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY_V a1
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_v u on u.UPM_USER_ID = a1.UPM_USER_ID
+where VALID_CONSUMER_PROFILE_ID = 'Y'
+and VALID_EMAIL_FLAG = 'Y'
+and TEST_USER_FLAG = 'N'
+group by case when geo_desc is not null then geo_desc else 'NA' end with rollup;
+-------------------------------------------------------
+--PLANS/COACH PROGRAM - GEO CUT
+-------------------------------------------------------
+-- done - 
+DROP TABLE IF EXISTS ck_product.NRC_APP_FEATURE3_GEO;
+CREATE TABLE ck_product.NRC_APP_FEATURE3_GEO
+stored as parquet AS 
+select
+case when u.GEO_DESC is not null then u.GEO_DESC else 'NA' end as GEO_DESC
+,t.WEEK_END_DATE
+,t.WEEK_LAG
+,a2.CLASSIFICATION
+,count (distinct t.UPM_USER_ID) as USER_COUNT
+from
+(select distinct
+substr(dd.FSCL_WK_END_DT,1,10) as WEEK_END_DATE
+,datediff (${hiveconf:CUR_WEEK_END_DATE},substr(dd.FSCL_WK_END_DT,1,10))/7 as WEEK_LAG
+,USER_UPM_ID as UPM_USER_ID
+from COACH.COACH_PROGRAM_SUMMARY c
+inner join SPORTACTDM.DT_DIM dd on to_date(c.MESSAGE_START_DATE) = substr(dd.DT,1,10)
+where to_date(c.MESSAGE_START_DATE) between date_sub(${hiveconf:CUR_WEEK_END_DATE},398) and ${hiveconf:CUR_WEEK_END_DATE}
+and app_id = 'NIKEPLUSGPS'
+union all
+select distinct
+substr(dd.FSCL_WK_END_DT,1,10) as WEEK_END_DATE
+,datediff (${hiveconf:CUR_WEEK_END_DATE},substr(dd.FSCL_WK_END_DT,1,10))/7 as WEEK_LAG
+,USER_UPM_ID as UPM_USER_ID
+from plans.plan p
+inner join SPORTACTDM.DT_DIM dd on to_date(p.message_create_time) = substr(dd.DT,1,10)
+where to_date(message_create_time) between date_sub(${hiveconf:CUR_WEEK_END_DATE},398) and ${hiveconf:CUR_WEEK_END_DATE}
+and message_source = 'nike.nrc'
+) t
+left join DATASCIENCE_CK.KPMG_NRC_ACTIVITY_WEEKLY2_V a2 on t.UPM_USER_ID = a2.UPM_USER_ID AND t.WEEK_LAG = a2.WEEK_LAG
+inner join DATASCIENCE_CK.KPMG_NRC_USR_AGG_V u on t.UPM_USER_ID = u.UPM_USER_ID
+where u.VALID_CONSUMER_PROFILE_ID = 'Y'
+and u.VALID_EMAIL_FLAG = 'Y'
+and u.TEST_USER_FLAG = 'N'
+group by a2.CLASSIFICATION
+,t.WEEK_END_DATE
+,t.WEEK_LAG
+,case when u.GEO_DESC is not null then u.GEO_DESC else 'NA' end with rollup;
+
+
+--Set 10
+-------------------------------------------------------
+-- APP DOWNLOADS
+-------------------------------------------------------
+-- done - 
+DROP TABLE IF EXISTS ck_product.ECOSYSTEM_DWNLDS_CTRY;
+CREATE TABLE ck_product.ECOSYSTEM_DWNLDS_CTRY
+stored as parquet AS 
+SELECT
+ctry,
+CASE WHEN substr(dd.FSCL_WK_END_DT,1,10) < date_sub(${hiveconf:CUR_WEEK_END_DATE},784) THEN 9999999   --- making output a string
+else datediff (${hiveconf:CUR_WEEK_END_DATE},substr(dd.FSCL_WK_END_DT,1,10))/7 end as WEEK_LAG 
+,substr(dd.FSCL_WK_END_DT,1,10) as WEEK_END_DATE    
+,CASE WHEN (af.prod_id='96955120370' and to_date(af.rpt_dt) >= '2016-08-02') THEN 'NIKE_PLUS_IOS'
+WHEN (af.prod_id='120844550835' and to_date(af.rpt_dt) >= '2016-08-02') THEN 'NIKE_PLUS_DROID'
+WHEN af.prod_id='40978304457' THEN 'SNKRS_IOS'
+WHEN af.prod_id='42078527346' THEN 'SNKRS_DROID'
+WHEN af.prod_id='6301324' THEN 'RUNNING_IOS'
+WHEN af.prod_id='212367941' THEN 'RUNNING_DROID'
+WHEN af.prod_id IN ('5870051', '6518303', '6518360', '6522978', '295020549', '6038787') THEN 'NTC_IOS'
+WHEN af.prod_id='214246602' THEN 'NTC_DROID'
+WHEN af.prod_id='162386312' THEN 'GOLF_IOS'
+WHEN af.prod_id='39737471835' THEN 'SB_IOS'
+WHEN af.prod_id='40147009725' THEN 'SOCCER_IOS'
+WHEN af.prod_id='40150480600' THEN 'SOCCER_DROID'
+ELSE NULL END AS APP_DEVICE 
+,SUM(af.updts) AS TOTAL_UPDATES
+,SUM(af.dwnlds) AS TOTAL_DOWNLOADS
+FROM dgtlbrnddm.social_appfigures af
+inner join SPORTACTDM.DT_DIM dd on substr(af.rpt_dt,1,10) = substr(dd.DT,1,10)
+WHERE af.rpt_dt_part <= substr(${hiveconf:CUR_WEEK_END_DATE},1,7)
+AND af.rpt_dt_part >= '2014-01'
+GROUP BY 
+ctry,
+CASE WHEN substr(dd.FSCL_WK_END_DT,1,10) < date_sub(${hiveconf:CUR_WEEK_END_DATE},784) then 9999999   --- making output a string
+else datediff (${hiveconf:CUR_WEEK_END_DATE},substr(dd.FSCL_WK_END_DT,1,10))/7 end
+,substr(dd.FSCL_WK_END_DT,1,10)   
+,CASE WHEN (af.prod_id='96955120370' and to_date(af.rpt_dt) >= '2016-08-02') THEN 'NIKE_PLUS_IOS'
+WHEN (af.prod_id='120844550835' and to_date(af.rpt_dt) >= '2016-08-02') THEN 'NIKE_PLUS_DROID'
+WHEN af.prod_id='40978304457' THEN 'SNKRS_IOS'
+WHEN af.prod_id='42078527346' THEN 'SNKRS_DROID'
+WHEN af.prod_id='6301324' THEN 'RUNNING_IOS'
+WHEN af.prod_id='212367941' THEN 'RUNNING_DROID'
+WHEN af.prod_id IN ('5870051', '6518303', '6518360', '6522978', '295020549', '6038787') THEN 'NTC_IOS'
+WHEN af.prod_id='214246602' THEN 'NTC_DROID'
+WHEN af.prod_id='162386312' THEN 'GOLF_IOS'
+WHEN af.prod_id='39737471835' THEN 'SB_IOS'
+WHEN af.prod_id='40147009725' THEN 'SOCCER_IOS'
+WHEN af.prod_id='40150480600' THEN 'SOCCER_DROID'
+ELSE NULL END
+;
+-- done - 10/08
+DROP TABLE IF EXISTS ck_product.NRC_APP_DOWNLOADS_GEO;
+CREATE TABLE ck_product.NRC_APP_DOWNLOADS_GEO
+stored as parquet AS 
+select
+WEEK_LAG,
+CASE WHEN upper(CTRY) IN ('CANADA','UNITED STATES') THEN 'NORTH AMERICA'
+WHEN upper(CTRY) IN ('AUSTRIA','BELGIUM','DENMARK','EUROPE','FINLAND','FRANCE','FRANCE, METROPOLITAN','GERMANY','IRELAND','ITALY','LUXEMBOURG','MARTINIQUE','MONACO','NETHERLANDS','NETHERLANDS ANTILLES','NORWAY','PORTUGAL','SPAIN','SWEDEN','SWITZERLAND','UNITED KINGDOM') THEN 'WESTERN EUROPE'
+WHEN UPPER(CTRY) IN ('CHINA','HONG KONG','TAIWAN') THEN 'CHINA'
+WHEN UPPER(CTRY) IN ('JAPAN') THEN 'JAPAN'
+WHEN UPPER(CTRY) IN ('BAHRAIN','BELARUS','BOSNIA AND HERZEGOWINA','BRUNEI DARUSSALAM','CROATIA (LOCAL NAME - HRVATSKA)','CZECH REPUBLIC','ESTONIA','GEORGIA','GREECE','HUNGARY','IRAN (ISLAMIC REPUBLIC OF)','IRAQ','ISRAEL','JORDAN','KUWAIT','LATVIA','LEBANON','LITHUANIA','MACEDONIA - THE FRM YUGOSLAV REP OF','MIDDLE EAST','MOLDOVA - REPUBLIC OF','MONTENEGRO','OMAN','PALESTINIAN TERRITORIES','POLAND','QATAR','ROMANIA','RUSSIAN FEDERATION','SAUDI ARABIA','SERBIA','SLOVAKIA (SLOVAK REPUBLIC)','SLOVENIA','SYRIAN ARAB REPUBLIC','TURKEY','UKRAINE','UNITED ARAB EMIRATES','YEMEN') THEN 'CENTRAL AND EASTERN EUROPE'
+WHEN UPPER(CTRY) IN ('ALGERIA','ANGOLA','ARGENTINA','AUSTRALIA','BENIN','BOTSWANA','BRAZIL','BURKINA FASO','BURUNDI','CAMEROON','CAPE VERDE','CENTRAL AFRICANREPUBLIC','CHAD','CHILE','COLOMBIA','COMOROS','CONGO','CONGO - THE DEMOCRATIC REP OF','DJIBOUTI','ECUADOR','EGYPT','EMERGING MARKETS','EQUATORIALGUINEA','ERITREA','ETHIOPIA','GABON','GAMBIA','GHANA','GUINEA','GUINEA-BISSAU','INDIA','INDONESIA','KENYA','KOREA - SOUTH','KOREA, DEMOCRATIC PEOPLE''S REPUBLIC OF','LESOTHO','LIBERIA','LIBYAN ARAB JAMAHIRIYA','MADAGASCAR','MALAWI','MALAYSIA','MALI','MAURITANIA','MAURITIUS','MAYOTTE','MEXICO','MOROCCO','MOZAMBIQUE','NAMIBIA','NEW ZEALAND','NIGER','NIGERIA','PANAMA','PARAGUAY','PERU','PHILIPPINES','REUNION','RWANDA','SAO TOME AND PRINCIPE','SENEGAL','SEYCHELLES','SIERRA LEONE','SINGAPORE','SOMALIA','SOUTH AFRICA','SOUTH SUDAN','SUDAN','SWAZILAND','TANZANIA - UNITED REPUBLIC OF','THAILAND','TOGO','TUNISIA','UGANDA','URUGUAY','VENEZUELA','VIET NAM','ZAMBIA','ZIMBABWE') THEN 'EMERGING MARKETS'
+ELSE 'OTHER'
+END AS GEO,
+sum(case when app_device in ('RUNNING_IOS','RUNNING_DROID') then total_downloads else 0 end) AS TOTAL_DOWNLOADS,
+sum(case when app_device='RUNNING_IOS' then total_downloads else 0 end) AS IOS_DOWNLOADS,
+sum(case when app_device='RUNNING_DROID' then total_downloads else 0 end) AS DROID_DOWNLOADS
+FROM ck_product.ECOSYSTEM_DWNLDS_CTRY
+WHERE WEEK_LAG BETWEEN 0 and 104
+GROUP BY WEEK_LAG,
+CASE WHEN upper(CTRY) IN ('CANADA','UNITED STATES') THEN 'NORTH AMERICA'
+WHEN upper(CTRY) IN ('AUSTRIA','BELGIUM','DENMARK','EUROPE','FINLAND','FRANCE','FRANCE, METROPOLITAN','GERMANY','IRELAND','ITALY','LUXEMBOURG','MARTINIQUE','MONACO','NETHERLANDS','NETHERLANDS ANTILLES','NORWAY','PORTUGAL','SPAIN','SWEDEN','SWITZERLAND','UNITED KINGDOM') THEN 'WESTERN EUROPE'
+WHEN UPPER(CTRY) IN ('CHINA','HONG KONG','TAIWAN') THEN 'CHINA'
+WHEN UPPER(CTRY) IN ('JAPAN') THEN 'JAPAN'
+WHEN UPPER(CTRY) IN ('BAHRAIN','BELARUS','BOSNIA AND HERZEGOWINA','BRUNEI DARUSSALAM','CROATIA (LOCAL NAME - HRVATSKA)','CZECH REPUBLIC','ESTONIA','GEORGIA','GREECE','HUNGARY','IRAN (ISLAMIC REPUBLIC OF)','IRAQ','ISRAEL','JORDAN','KUWAIT','LATVIA','LEBANON','LITHUANIA','MACEDONIA - THE FRM YUGOSLAV REP OF','MIDDLE EAST','MOLDOVA - REPUBLIC OF','MONTENEGRO','OMAN','PALESTINIAN TERRITORIES','POLAND','QATAR','ROMANIA','RUSSIAN FEDERATION','SAUDI ARABIA','SERBIA','SLOVAKIA (SLOVAK REPUBLIC)','SLOVENIA','SYRIAN ARAB REPUBLIC','TURKEY','UKRAINE','UNITED ARAB EMIRATES','YEMEN') THEN 'CENTRAL AND EASTERN EUROPE'
+WHEN UPPER(CTRY) IN ('ALGERIA','ANGOLA','ARGENTINA','AUSTRALIA','BENIN','BOTSWANA','BRAZIL','BURKINA FASO','BURUNDI','CAMEROON','CAPE VERDE','CENTRAL AFRICANREPUBLIC','CHAD','CHILE','COLOMBIA','COMOROS','CONGO','CONGO - THE DEMOCRATIC REP OF','DJIBOUTI','ECUADOR','EGYPT','EMERGING MARKETS','EQUATORIALGUINEA','ERITREA','ETHIOPIA','GABON','GAMBIA','GHANA','GUINEA','GUINEA-BISSAU','INDIA','INDONESIA','KENYA','KOREA - SOUTH','KOREA, DEMOCRATIC PEOPLE''S REPUBLIC OF','LESOTHO','LIBERIA','LIBYAN ARAB JAMAHIRIYA','MADAGASCAR','MALAWI','MALAYSIA','MALI','MAURITANIA','MAURITIUS','MAYOTTE','MEXICO','MOROCCO','MOZAMBIQUE','NAMIBIA','NEW ZEALAND','NIGER','NIGERIA','PANAMA','PARAGUAY','PERU','PHILIPPINES','REUNION','RWANDA','SAO TOME AND PRINCIPE','SENEGAL','SEYCHELLES','SIERRA LEONE','SINGAPORE','SOMALIA','SOUTH AFRICA','SOUTH SUDAN','SUDAN','SWAZILAND','TANZANIA - UNITED REPUBLIC OF','THAILAND','TOGO','TUNISIA','UGANDA','URUGUAY','VENEZUELA','VIET NAM','ZAMBIA','ZIMBABWE') THEN 'EMERGING MARKETS'
+ELSE 'OTHER'
+END with rollup
+ORDER BY WEEK_LAG
+;
+
+
+--Set 11
+-------------------------------------------------------
+-- NEW TO NIKE
+-------------------------------------------------------
+-- waiting for mece
+
+DROP TABLE IF EXISTS ck_product.NRC_APP_NEW_TO_NIKE_GEO;
+CREATE TABLE ck_product.NRC_APP_NEW_TO_NIKE_GEO 
+stored as parquet AS 
+select
+case when v.geo_desc is NULL then 'NA' else v.geo_desc end as geo_desc
+,dd.FSCL_WK_END_DT
+,datediff (${hiveconf:CUR_WEEK_END_DATE},substr(dd.FSCL_WK_END_DT,1,10))/7 as WEEK_LAG  
+,count(distinct m.UPM_USER_ID) as NEW_TO_NIKE_NRC
+from ck_product.MECE m
+inner join SPORTACTDM.DT_DIM dd on m.SD_BY_APP = dd.DT_DIM_ID
+inner join sportactdm.user_dim u on u.upm_user_id=m.upm_user_id
+inner join (select * from DATASCIENCE_CK.KPMG_NRC_USR_AGG_V) v on v.UPM_USER_ID = u.UPM_USER_ID
+where to_date(from_unixtime(unix_timestamp(cast(SD_BY_APP as string),'yyyyMMdd'))) between date_sub(${hiveconf:CUR_WEEK_END_DATE},377) and ${hiveconf:CUR_WEEK_END_DATE}
+and upper(APPLICATION)="RUNNING"
+and v.VALID_CONSUMER_PROFILE_ID = 'Y'
+and v.VALID_EMAIL_FLAG = 'Y'
+and v.TEST_USER_FLAG = 'N'
+group by 
+dd.FSCL_WK_END_DT, datediff (${hiveconf:CUR_WEEK_END_DATE},substr(dd.FSCL_WK_END_DT,1,10))/7,
+case when v.geo_desc is NULL then 'NA' else v.geo_desc end
+with rollup;
+
