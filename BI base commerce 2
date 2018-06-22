@@ -1,0 +1,64 @@
+set hive.exec.parallel=true; 
+set hive.mapred.mode=nonstrict;
+set hive.merge.mapfiles = true;
+set hive.merge.mapredfiles = true;
+set hive.merge.size.per.task = 256000000;
+set hive.merge.smallfiles.avgsize = 100000000;
+
+SET hive.exec.compress.output=true; 
+SET avro.output.codec=snappy;
+SET parquet.output.codec=snappy; 
+SET hive.exec.compress.intermediate=true;
+
+--For very large data:
+SET mapreduce.input.fileinputformat.split.minsize=2598455210;
+SET mapreduce.input.fileinputformat.split.maxsize=2598455210;
+
+use  ${hivevar:HIVEDATABASE};
+drop table repeat_retained_base_commerce_1;
+create table repeat_retained_base_commerce_1 
+stored as parquet as select member_id,preferred_country,geo,time_slice,category,count
+from
+(select 
+member_id,
+geo as geo,
+case when upper(trim(preferred_country)) = "CHN" and upper(trim(memloc_v2_region)) in ("HONG KONG","HKG") then "HKG" when upper(trim(preferred_country)) = "CHN" and upper(trim(memloc_v2_region)) not in ("HONG KONG","HKG") then "CHN" else coalesce(upper(trim(preferred_country)),"OTHER") end AS preferred_country,
+upper(time_slice) as time_slice,
+map( 'ALL',commerce_units_isactive,
+'RUNNING',order_running_isactive                              
+,'SOCCER',order_soccer_isactive                               
+,'BASKETBALL',order_basketball_isactive                           
+,'NSW',order_nsw_isactive                                  
+,'GOLF',order_golf_isactive                                 
+,'JORDAN',order_jordan_isactive                               
+,'AMERICANFOOTBALL_BASEBALL',order_americanfootball_baseball_isactive            
+,'TENNIS',order_tennis_isactive                               
+,'NIKESB',order_nikesb_isactive                               
+,'MEN_TRAINING',order_men_training_isactive                         
+,'HURLEY',order_hurley_isactive                               
+,'OTHER',order_other_isactive                                
+,'WOMENS_TRAINING',order_womens_training_isactive 
+-----------------------------ceil function ensures the numbers are either 0 or 1 -----------------------------------------------
+,'NIKE_WOMEN',case when upper(gender) = "F" then ceil((
+order_running_isActive_female+order_running_isActive_unisex+order_running_isActive_na+
+order_nsw_isActive_unisex+order_nsw_isActive_na+order_nsw_isActive_female+order_womens_training_isActive_female+order_womens_training_isActive_unisex+order_womens_training_isActive_na)/27) end) mapped
+from member.membership_results
+where 1=1
+and upper(date_category)= "MEMBERSHIP"
+----------------------------filtering for only the required time slices------------------------
+AND lower(time_slice) in(
+"last_12_months"
+,"last_3_months"
+,"mtd"
+,"fytd"
+,"fqtd"
+,"prior_12_months"
+,"prior_3_months"
+,"prior_mtd"
+,"fytd_same_prev_year"
+,"prior_fqtd"
+,"ltd_before_last_12_months"
+,"ltd_before_last_3_months"
+,"ltd_before_mtd"
+))m
+lateral view explode(mapped) detail as category,count;
