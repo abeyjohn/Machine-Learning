@@ -1,0 +1,227 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jul 02 10:27:20 2018
+
+@author: Abey.John
+
+"""
+import numpy as np
+import pandas as pd
+#tuple
+t = ()
+#dictionary 
+d = {}
+
+# list 
+l=[]
+
+#array -- can't initialize null array
+a = np.zeros(10,dtype=int)
+np.ones((3,5),dtype = 'float')
+np.full((3,5),1.23)
+np.arange(0,20,2)
+np.linspace(0,1,5)
+#create a 3x3 array with mean 0 and standard deviation 1 in a given dimension
+np.random.normal(0,1,(3,3))
+
+#identity matrix
+np.eye(3)
+
+#set a random seed
+np.random.seed(0)
+
+
+x1 = np.random.randint(10, size=6) #one dimension
+x2 = np.random.randint(10, size=(3,4)) #two dimension
+x3 = np.random.randint(10, size=(3,4,5)) #three dimension
+
+print(x2.size) #prints the number of elements in the array
+print(x2.shape) # prints the shape of the array
+print(x2.ndim) # prints the number of deimension
+
+l=list(range(10))
+
+array = np.arange(0,10,1)
+#returns elements at even place
+array[: :2]
+# returns the elements at odd places
+array[1: :2]
+
+#reverses the array
+array[::-1]
+
+x= np.array([1,2,3])
+y=np.array([4,5,6])
+z=np.array([21,2,1])
+
+#concatenate the array
+con=np.concatenate([x,y,z,z],)
+con.size
+reshape =con.reshape(4,3)
+reshape1 =con.reshape(3,4)
+
+
+axiscon=np.concatenate([reshape,z],axis =0)
+
+#Stack vertically
+np.vstack([z,reshape])
+#Stack horizontally
+np.hstack([z.reshape(3,1),reshape1])
+
+
+#Split the array in predefined positions
+
+array
+
+x4,x5,x6 =np.split(array,[3,6])
+
+x7,x8=np.split(array.reshape(5,2),[2])
+
+
+
+
+#Pandas
+
+
+data = pd.DataFrame({'Country': ['Russia','Colombia','Chile','Equador','Nigeria'],
+                    'Rank':[121,40,100,130,11]})
+data.describe()
+data.info()
+
+
+data = pd.DataFrame({'group':['a', 'a', 'a', 'b','b', 'b', 'c', 'c','c'],'ounces':[4, 3, 12, 6, 7.5, 8, 3, 5, 6]})
+
+data.describe()
+data.info()
+
+data.sort_values(by="group",ascending =True,inplace =True)
+
+data.sort_values(by=["group","ounces"],ascending =[True,False],inplace =True)
+
+data=pd.DataFrame({'k1':['one']*3+['two']*4,'k2':[3,2,1,3,3,4,4]})
+
+data.drop_duplicates()
+data.sort_values(by ='k2')
+
+data.drop_duplicates(subset=['k2'])
+
+
+
+data = pd.DataFrame({'food': ['bacon', 'pulled pork', 'bacon', 'Pastrami','corned beef', 'Bacon', 'pastrami', 'honey ham','nova lox'],
+                 'ounces': [4, 3, 12, 6, 7.5, 8, 3, 5, 6]})
+                 
+                 
+meat_to_animal = {
+'bacon': 'pig',
+'pulled pork': 'pig',
+'pastrami': 'cow',
+'corned beef': 'cow',
+'honey ham': 'pig',
+'nova lox': 'salmon'
+}
+
+data['animal']=data['food'].map(str.lower).map(meat_to_animal)
+
+
+data.drop('new',axis='columns',inplace=False)
+data.drop(8,axis='rows',inplace=False)
+
+data=data.assign(new =data['ounces']*10)
+
+#Series function from pandas is used to create arrays
+data = pd.Series([1., -999., 2., -999., -1000., 3.])
+
+
+data.replace(-999,np.mean(data),inplace =False)
+data.replace(-999, np.nan,inplace=True)
+
+data = pd.DataFrame(np.arange(12).reshape((3, 4)),index=['Ohio', 'Colorado', 'New York'],columns=['one', 'two', 'three', 'four'])
+data.rename(index=str.title,columns = {'one':'one_p'})
+
+ages = [20, 22, 25, 27, 21, 23, 37, 31, 61, 45, 41, 32]
+
+bins = [18,25,35,60,100]
+cats = pd.cut(ages,bins,labels = bin_names,right =False)
+
+cats.labels
+
+pd.value_counts(cats)
+
+bin_names =['Youth', 'YoungAdult', 'MiddleAge', 'Senior']
+
+pd.value_counts(cats).cumsum()
+
+df = pd.DataFrame({'key1' : ['a', 'a', 'b', 'b', 'a'],
+                   'key2' : ['one', 'two', 'one', 'two', 'one'],
+                   'data1' : np.random.randn(5),
+                   'data2' : np.random.randn(5)})
+grouped = df['data1'].groupby(df['key1'])
+grouped.sum()
+
+
+#Slicing Data frame 
+
+dates =pd.date_range('20130101',periods=6)
+df = pd.DataFrame(np.random.randn(6,4),index = dates,columns = list('ABCD'))
+
+df.loc[:'2013-01-03']
+df[:3]
+df.ix[:3]
+df.iloc[:3,1]
+df.iloc[1,3]
+df.iloc[1,]
+df.iloc[:,3]
+df['20130101':'20130104']
+
+df.loc['20130102':'20130103',['A','B']]
+
+df[df.A > 1]
+
+df2 = df.copy()
+df2['E']=['one', 'one','two','three','four','three']
+df2
+
+#Select rows based on values
+
+df2[df2['E']=='one']
+
+df2[df2['E'].isin(['one','two'])]
+
+df.query('A>C')
+
+df.query('A>C|B>C')
+
+data = pd.DataFrame({'group': ['a', 'a', 'a', 'b','b', 'b', 'c', 'c','c'],
+                 'ounces': [4, 3, 12, 6, 7.5, 8, 3, 5, 6]})
+                
+grouped = data['ounces'].groupby(data['group'])
+grouped.count()
+
+
+data.pivot_table(values='ounces',index='group',aggfunc='count')
+
+import os
+os.chdir("C:/Users/abey.john/Desktop")
+
+train = pd.read_csv("train.csv")
+test=pd.read_csv("test.csv")
+
+train.describe()
+
+
+#Check for missing values
+
+nans = train.shape[0] - train.dropna().shape[0]
+print ("%d rows have missing values in the train data" %nans)
+
+nand = test.shape[0] - test.dropna().shape[0]
+print ("%d rows have missing values in the test data" %nand)
+
+train.isnull().sum()
+
+cat =train.select_dtypes(include=['O'])
+
+cat.apply(pd.Series.nunique)
+
+train.workclass.value_counts(sort=True)
+train.workclass.fillna()
